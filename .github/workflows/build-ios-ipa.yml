@@ -107,7 +107,8 @@ jobs:
         # target regardless of which nested .xcodeproj it landed in.
         run: |
           set -eo pipefail
-          cmake --build build --config Release 2>&1 | tee cmake-build.log
+          cmake --build build --config Release -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee cmake-build.log
 
       - name: Build the MeloCafe app
         run: |
