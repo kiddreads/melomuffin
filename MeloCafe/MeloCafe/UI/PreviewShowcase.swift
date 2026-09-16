@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Combine
 
 //  Preview showcase - the new geometry/colour/group system wired in as a genuine,
 //  compiled, running alternative to the shipping pad rather than a rewrite of it.

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// Per-game overrides on top of the global defaults in Settings.
 ///

@@ -70,6 +70,7 @@
 				UI/CoverArtFetcher.swift,
 				UI/DlcUpdateImport.swift,
 				UI/DecryptROMView.swift,
+				UI/LaunchLogView.swift,
 			);
 			platformFiltersByRelativePath = {
 				Depedencies/MoltenVK.xcframework = (ios, );
