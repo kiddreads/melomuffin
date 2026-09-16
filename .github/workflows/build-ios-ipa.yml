@@ -78,6 +78,23 @@ jobs:
           path: .vcpkg-archives
           key: melomuffin-vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
 
+      - name: Select the newest available Xcode for the app
+        # Melo-Controller (a remote SPM package the MeloCafe target depends on) uses
+        # the optional default in string interpolation ("\(x, default: "y")"), which
+        # needs Swift 6.2+. Xcode 16.4 (this runner's default /Applications/Xcode.app)
+        # rejects it as "extra argument 'default' in call". MuffinEMU hit the exact
+        # same package/error and fixed it by picking whichever Xcode is newest rather
+        # than pinning one - kept the same fix here instead of hardcoding a version
+        # that may not exist on this runner image.
+        run: |
+          set -eo pipefail
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n1)
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Build the MeloCafe app
         run: |
           set -eo pipefail
