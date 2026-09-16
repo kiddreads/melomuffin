@@ -67,6 +67,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DBUILD_HEADLESS_DYLIB=ON \
             -DCMAKE_MACOSX_BUNDLE=OFF \
             2>&1 | tee configure.log
           test -f build/src/cemuMain.xcodeproj/project.pbxproj
