@@ -1,0 +1,115 @@
+name: Build MeloCafe (iOS IPA)
+
+# melomuffin is MeloCafe's Cemu core and Xcode project, unmodified, with Muffin's UI
+# swapped in for MeloCafe's own UI (see README.md). There was no CI job anywhere in
+# this repo that produced an iOS build - build.yml only builds the desktop/AppImage
+# targets. This workflow builds the actual iOS app:
+#   1. Configure the Cemu core for arm64-ios with CMake's Xcode generator. This is
+#      what MeloCafe/MeloCafe.xcodeproj expects: it has a project reference to
+#      build/src/cemuMain.xcodeproj (see the cemuMain.xcodeproj PBXFileReference and
+#      the CemuBin/CemuInput PBXContainerItemProxy entries in project.pbxproj) rather
+#      than linking a prebuilt framework from a fixed path. Configuring with -G Xcode
+#      is what creates that nested project; xcodebuild then builds it as a normal
+#      target dependency of the MeloCafe scheme.
+#   2. Build the MeloCafe scheme for iphoneos.
+#   3. Package an unsigned IPA (SideStore/AltStore/LiveContainer-style; they re-sign
+#      on install) since this repo has no code signing identity configured
+#      (DEVELOPMENT_TEAM is blank, CODE_SIGN_STYLE is Automatic).
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode and show toolchain
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Identify the pinned vcpkg commit
+        id: vcpkg
+        run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: melomuffin-vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          restore-keys: |
+            melomuffin-vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
+
+      - name: Configure the Cemu core for iOS (generates build/src/cemuMain.xcodeproj)
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
+        run: |
+          set -eo pipefail
+          mkdir -p .vcpkg-archives
+          cmake -S . -B build -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DCMAKE_MACOSX_BUNDLE=OFF \
+            2>&1 | tee configure.log
+          test -f build/src/cemuMain.xcodeproj/project.pbxproj
+
+      - name: Save vcpkg binary cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: melomuffin-vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+
+      - name: Build the MeloCafe app
+        run: |
+          set -eo pipefail
+          xcodebuild -project MeloCafe/MeloCafe.xcodeproj -scheme MeloCafe -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build \
+            2>&1 | tee xcodebuild.log
+
+      - name: Package unsigned IPA
+        run: |
+          set -eo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MeloCafe.app" -path "*Release-iphoneos*" | head -n1)
+          if [ -z "$APP_PATH" ]; then echo "::error::no MeloCafe.app produced"; exit 1; fi
+          rm -rf Payload MeloCafe.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry MeloCafe.ipa Payload
+          echo "IPA size: $(du -h MeloCafe.ipa | cut -f1)"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeloCafe-ipa
+          path: MeloCafe.ipa
+          retention-days: 30
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-build-logs
+          path: |
+            configure.log
+            xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 30
