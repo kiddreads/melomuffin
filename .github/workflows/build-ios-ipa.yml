@@ -95,6 +95,20 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
+      - name: Build the vendored dependency libraries CMake doesn't put in MeloCafe's own target graph
+        # xbyak_aarch64, ih264d and ZArchive are real CMake targets (added via
+        # add_subdirectory from the root CMakeLists) but they're not part of the
+        # MeloCafe scheme's own explicit/implicit dependency graph the way CemuBin is -
+        # xcodebuild only resolves and builds that graph, so building the MeloCafe
+        # scheme alone left CemuBin's link step looking for
+        # build/lib/Release/libxbyak_aarch64.a and
+        # build/dependencies/{ih264d,ZArchive}/Release-iphoneos/lib*.a that were never
+        # built. `cmake --build` on the whole tree builds every add_subdirectory
+        # target regardless of which nested .xcodeproj it landed in.
+        run: |
+          set -eo pipefail
+          cmake --build build --config Release 2>&1 | tee cmake-build.log
+
       - name: Build the MeloCafe app
         run: |
           set -eo pipefail
@@ -127,6 +141,7 @@ jobs:
           name: ios-ipa-build-logs
           path: |
             configure.log
+            cmake-build.log
             xcodebuild.log
           if-no-files-found: warn
           retention-days: 30
